@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Carril rapido antes de cada commit. Se instala con: git config core.hooksPath .githooks
+# La suite completa no va aqui: la exige el pre-push.
+set -uo pipefail
+fallo=0
+
+# 1. Integridad. Bytes nulos o un archivo de texto que no termina en salto de linea son la firma de
+#    una edicion truncada (ya paso: la herramienta de edicion corto archivos sin avisar).
+#    Se mira lo PREPARADO, no el arbol de trabajo.
+#    ACMR: un renombre tambien trae contenido nuevo.
+texto='\.(ts|tsx|js|jsx|mjs|cjs|py|sql|md|json|css|scss|html|sh|yml|yaml|toml|txt)$'
+while IFS= read -r -d '' f; do
+  [[ "$f" =~ $texto ]] || continue
+  tam=$(git cat-file -s ":$f")
+  [ "$tam" -eq 0 ] && continue
+  sin=$(git show ":$f" | tr -d '\000' | wc -c)
+  if [ "$tam" -ne "$sin" ]; then echo "pre-commit: $f tiene bytes nulos (archivo truncado?)"; fallo=1; continue; fi
+  if [ "$(git show ":$f" | tail -c1 | od -An -c | tr -d ' ')" != '\n' ]; then
+    echo "pre-commit: $f no termina en salto de linea (archivo truncado?). Si es a proposito, agrega el salto final."
+    fallo=1
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+# 2. El CLAUDE.md de la raiz es un indice: maximo 200 lineas.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qx 'CLAUDE.md'; then
+  n=$(git show :CLAUDE.md | wc -l)
+  if [ "$n" -gt 200 ]; then echo "pre-commit: CLAUDE.md tiene $n lineas (maximo 200); mueve detalle a docs/"; fallo=1; fi
+fi
+
+# 3. Lo propio del proyecto (tipos, lint de lo preparado), si existe.
+if [ -f scripts/verificar-rapido.sh ]; then
+  bash scripts/verificar-rapido.sh || { echo "pre-commit: scripts/verificar-rapido.sh en rojo"; fallo=1; }
+fi
+
+exit "$fallo"

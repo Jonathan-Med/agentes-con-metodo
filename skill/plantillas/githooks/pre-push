@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Suite completa antes de que el codigo salga de la maquina.
+# Omitido no es verde: sin scripts/verificar-todo.sh, el push se detiene.
+set -uo pipefail
+if [ ! -f scripts/verificar-todo.sh ]; then
+  echo "pre-push: falta scripts/verificar-todo.sh. Omitido no es verde: crealo con la suite completa."
+  exit 1
+fi
+bash scripts/verificar-todo.sh || { echo "pre-push: la suite completa esta en rojo"; exit 1; }
